@@ -218,11 +218,10 @@ async function saveLastPost(imageUrl: string): Promise<void> {
 async function checkMenu() {
   const currentHour = new Date().getHours();
   
-  // Only check between 9h and 12h
-//   if (currentHour < 9 || currentHour >= 12) {
+  if (currentHour < 9 || currentHour >= 12) {
     console.log('Outside of checking hours (9h-12h), skipping check');
-    // return;
-//   }
+    return;
+  }
 
   // Check if we already posted today
   if (await hasPostedToday()) {
@@ -248,8 +247,8 @@ cron.schedule('0 9-12 * * *', checkMenu);
 
 // Initial check when starting the script (only if within hours)
 const currentHour = new Date().getHours();
-// if (currentHour >= 9 && currentHour < 12) {
+if (currentHour >= 9 && currentHour < 12) {
   checkMenu();
-// }
+}
 
 console.log('Menu scraper started. Waiting for scheduled checks (every hour from 9h to 12h)...');

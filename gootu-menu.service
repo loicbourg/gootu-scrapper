@@ -1,0 +1,15 @@
+[Unit]
+Description=Gootu Menu Scraper
+After=network.target
+
+[Service]
+Type=simple
+User=loic
+Environment=NODE_ENV=production
+WorkingDirectory=/home/loic/gootu-scrapper
+ExecStart=/home/loic/test-techno/gootu-scrapper/.devenv/profile/bin/node main.ts
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
