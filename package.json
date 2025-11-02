@@ -1,0 +1,13 @@
+{
+  "name": "gootu-scrapper",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@slack/web-api": "^7.12.0",
+    "dotenv": "^17.2.3",
+    "node-cron": "^4.2.1",
+    "puppeteer": "^24.27.0"
+  }
+}
