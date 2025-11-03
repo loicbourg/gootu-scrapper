@@ -6,8 +6,8 @@ After=network.target
 Type=simple
 User=loic
 Environment=NODE_ENV=production
-WorkingDirectory=/home/loic/gootu-scrapper
-ExecStart=/home/loic/test-techno/gootu-scrapper/.devenv/profile/bin/node main.ts
+WorkingDirectory=/home/loic/projets/gootu-scrapper
+ExecStart=/home/loic/projets/gootu-scrapper/.devenv/profile/bin/node main.ts
 Restart=always
 RestartSec=10
 

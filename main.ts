@@ -197,11 +197,16 @@ async function getTodayMenu(targetDate: Date = new Date()): Promise<MenuData | n
       const postContent = await post.evaluate((el) => {
         const fullText = el.textContent || '';
         
-        // First try to find time indicators in the full text
-        const timeMatch = fullText.match(/(\d+)\s*[jh]\b/);
+        // First try to find time indicators in the full text (minutes, heures, jours)
+        const timeMatch = fullText.match(/(\d+)\s*(min|[jh])\b/);
         if (timeMatch) {
           const number = parseInt(timeMatch[1], 10);
-          const unit = timeMatch[0].endsWith('h') ? 'heures' : 'jours';
+          let unit;
+          if (timeMatch[2] === 'min') {
+            unit = 'minutes';
+          } else {
+            unit = timeMatch[2] === 'h' ? 'heures' : 'jours';
+          }
           return {
             dateText: `${number} ${unit}`,
             fullText: fullText,
@@ -254,12 +259,14 @@ async function getTodayMenu(targetDate: Date = new Date()): Promise<MenuData | n
         const dateText = postContent.dateText.trim();
         
         if (postContent.timeAgo) {
-          // Handle relative time formats (X jours, X heures) using current date as reference
+          // Handle relative time formats (X jours, X heures, X minutes) using current date as reference
           postDate = new Date(); // Use current date as reference for relative dates
           if (postContent.timeAgo.unit === 'jours') {
             postDate.setDate(postDate.getDate() - postContent.timeAgo.value);
           } else if (postContent.timeAgo.unit === 'heures') {
             postDate.setHours(postDate.getHours() - postContent.timeAgo.value);
+          } else if (postContent.timeAgo.unit === 'minutes') {
+            postDate.setMinutes(postDate.getMinutes() - postContent.timeAgo.value);
           }
         } else if (dateText.toLowerCase().includes('hier')) {
           // Post from yesterday
