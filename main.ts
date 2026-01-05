@@ -193,9 +193,54 @@ async function getTodayMenu(targetDate: Date = new Date()): Promise<MenuData | n
 
     // Look for today's menu in recent posts
     for (const post of posts) {
+      // First, try to expand "See More" / "Voir plus" links to get full text
+      try {
+        // Find all buttons in the post - more specific selectors
+        const buttons = await post.$$('div[role="button"], span[role="button"]');
+        let clicked = false;
+        
+        console.log(`Found ${buttons.length} button(s) in post`);
+        
+        for (let i = 0; i < buttons.length; i++) {
+          const buttonText = await buttons[i].evaluate(el => el.textContent || '');
+          const trimmedText = buttonText.trim();
+          
+          // More precise check
+          if (trimmedText === 'En voir plus' || trimmedText === 'Voir plus' || trimmedText === 'See more' || 
+              trimmedText.startsWith('En voir plus') || trimmedText.startsWith('Voir plus')) {
+            console.log(`Button ${i}: Found "Voir plus" button with text: "${trimmedText}", clicking to expand...`);
+            try {
+              await buttons[i].click();
+              await new Promise(resolve => setTimeout(resolve, 2000)); // Wait longer for expansion
+              console.log('✓ Clicked "Voir plus" button, text should now be expanded');
+              clicked = true;
+              break;
+            } catch (clickError) {
+              console.log(`Failed to click button ${i}:`, clickError);
+            }
+          } else if (buttonText.includes('voir plus') || buttonText.includes('Voir plus')) {
+            console.log(`Button ${i}: Contains "voir plus" (full text: "${trimmedText.substring(0, 50)}...")"`);
+          }
+        }
+        
+        if (!clicked) {
+          console.log('No "Voir plus" button found in this post');
+        }
+      } catch (e) {
+        console.log('Error while trying to click "Voir plus" button:', e);
+      }
+
       // Get post date and text for debugging
       const postContent = await post.evaluate((el) => {
         const fullText = el.textContent || '';
+        
+        // Extract the message text from data-ad-preview="message" - get ALL text content
+        const messageEl = el.querySelector('[data-ad-preview="message"]');
+        let messageText = '';
+        if (messageEl) {
+          // Get all text, including nested divs
+          messageText = messageEl.textContent || '';
+        }
         
         // First try to find time indicators in the full text (minutes, heures, jours)
         const timeMatch = fullText.match(/(\d+)\s*(min|[jh])\b/);
@@ -210,6 +255,7 @@ async function getTodayMenu(targetDate: Date = new Date()): Promise<MenuData | n
           return {
             dateText: `${number} ${unit}`,
             fullText: fullText,
+            messageText: messageText,
             timeAgo: {
               value: number,
               unit: unit
@@ -238,18 +284,20 @@ async function getTodayMenu(targetDate: Date = new Date()): Promise<MenuData | n
                 text.match(/\d+ [a-zéû]+ \d+/i)) {
               return {
                 dateText: text,
-                fullText: fullText
+                fullText: fullText,
+                messageText: messageText
               };
             }
           }
         }
         
-        return { dateText: '', fullText: fullText };
+        return { dateText: '', fullText: fullText, messageText: messageText };
       });
 
       console.log('Post content:', {
         dateText: postContent.dateText,
-        previewText: postContent.fullText.substring(0, 100) + '...'
+        messagePreview: postContent.messageText.substring(0, 150),
+        fullTextLength: postContent.fullText.length
       });
 
       let postDate: Date | null = null;
@@ -309,20 +357,40 @@ async function getTodayMenu(targetDate: Date = new Date()): Promise<MenuData | n
         continue;
       }
 
-      const text = await post.evaluate(el => {
-        const messageEl = el.querySelector('[data-ad-preview="message"]');
-        return messageEl ? messageEl.textContent : '';
-      });
+      // Use the already extracted messageText instead of querying again
+      const text = postContent.messageText;
+
+      console.log('Checking post text for menu keywords.');
+      console.log('  - Text length:', text.length);
+      console.log('  - Contains "menu":', text.toLowerCase().includes('menu'));
+      console.log('  - Contains "aujourd\'hui":', text.toLowerCase().includes('aujourd\'hui'));
+      console.log('  - Contains today date:', text.toLowerCase().includes(today.toLowerCase()));
+      console.log('  - Text preview:', text.substring(0, 200));
 
       if (text && (
         text.toLowerCase().includes('menu') ||
         text.toLowerCase().includes('aujourd\'hui') ||
         text.toLowerCase().includes(today.toLowerCase())
       )) {
+
+        console.log('✓ Found potential menu post!');
         // Found the menu post, now get the image
-        const imageElement = await post.$('a[role="link"] img');
+        // Try multiple selectors for the image
+        let imageElement = await post.$('a[role="link"] img');
+        
+        if (!imageElement) {
+          console.log('Trying alternative image selector: img[alt*="MENU"]');
+          imageElement = await post.$('img[alt*="MENU"]');
+        }
+        
+        if (!imageElement) {
+          console.log('Trying alternative image selector: img[src*="scontent"]');
+          imageElement = await post.$('img[src*="scontent"]');
+        }
+        
         if (imageElement) {
           const imageUrl = await imageElement.evaluate(img => img.src);
+          console.log('✓ Found image URL:', imageUrl);
           menuData = {
             text: text,
             imageUrl: imageUrl,
@@ -330,6 +398,8 @@ async function getTodayMenu(targetDate: Date = new Date()): Promise<MenuData | n
           };
           break;
         }
+      } else {
+        console.log('✗ Post does not contain menu keywords');
       }
     }
 
