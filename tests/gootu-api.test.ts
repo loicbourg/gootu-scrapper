@@ -25,7 +25,12 @@ test('extractMenuSections keeps only plat du jour and desserts', () => {
 
   const sections = extractMenuSections(catalog, categories);
 
-  assert.deepEqual(sections.plats, ['Blanquette de veau']);
+  assert.deepEqual(sections.plats, [
+    {
+      nom: 'Blanquette de veau',
+      hasGoatOrSheepCheese: false
+    }
+  ]);
   assert.deepEqual(sections.desserts, ['Cookie chocolat']);
 });
 
@@ -74,8 +79,14 @@ test('extractMenuSections includes active snacking plat while excluding burger/w
   const sections = extractMenuSections(catalog, categories, '2026-03-09');
 
   assert.deepEqual(sections.plats, [
-    'Effiloche de porc sauce moutarde',
-    'Quiche au thon et a la tomate'
+    {
+      nom: 'Effiloche de porc sauce moutarde',
+      hasGoatOrSheepCheese: false
+    },
+    {
+      nom: 'Quiche au thon et a la tomate',
+      hasGoatOrSheepCheese: false
+    }
   ]);
   assert.deepEqual(sections.desserts, ['Cookie chocolat noisettes']);
 });
@@ -109,13 +120,23 @@ test('finalizeMenuSections adds fallback plat when menu detail has plat du jour 
     true
   );
 
-  assert.deepEqual(finalSections.plats, ['Plat du jour (detail non expose par l API)']);
+  assert.deepEqual(finalSections.plats, [
+    {
+      nom: 'Plat du jour (detail non expose par l API)',
+      hasGoatOrSheepCheese: false
+    }
+  ]);
   assert.deepEqual(finalSections.desserts, ['Cookie chocolat']);
 });
 
 test('shouldPostMenu is false when target day is closed', () => {
   const sections = {
-    plats: ['Plat du jour'],
+    plats: [
+      {
+        nom: 'Plat du jour',
+        hasGoatOrSheepCheese: false
+      }
+    ],
     desserts: ['Cookie chocolat']
   };
 
@@ -124,7 +145,12 @@ test('shouldPostMenu is false when target day is closed', () => {
 
 test('buildSlackMessage formats only relevant sections', () => {
   const text = buildSlackMessage(new Date('2026-03-09T09:00:00Z'), {
-    plats: ['Blanquette de veau'],
+    plats: [
+      {
+        nom: 'Blanquette de veau',
+        hasGoatOrSheepCheese: false
+      }
+    ],
     desserts: ['Cookie chocolat', 'Part de flan']
   });
 
@@ -132,4 +158,87 @@ test('buildSlackMessage formats only relevant sections', () => {
   assert.match(text, /Blanquette de veau/);
   assert.match(text, /Cookie chocolat/);
   assert.doesNotMatch(text, /boisson/i);
+});
+
+test('buildSlackMessage switches header and plat line emoji for goat or sheep cheese', () => {
+  const text = buildSlackMessage(new Date('2026-03-09T09:00:00Z'), {
+    plats: [
+      {
+        nom: 'Gratin au chevre',
+        hasGoatOrSheepCheese: true
+      },
+      {
+        nom: 'Effiloche de porc sauce moutarde',
+        hasGoatOrSheepCheese: false
+      }
+    ],
+    desserts: []
+  });
+
+  assert.match(text, /^:goat_dead: Menu du jour GOOTU - /m);
+  assert.match(text, /- :goat_dead: Gratin au chevre/);
+  assert.match(text, /- Effiloche de porc sauce moutarde/);
+});
+
+test('extractMenuSections marks goat or sheep cheese plats with keyword matching', () => {
+  const categories = [
+    { nom: 'Plats du jour', slug: 'plats-du-jour' }
+  ];
+
+  const catalog = [
+    { nom: 'Pates au Roquefort', categories: ['plats-du-jour'] },
+    { nom: 'Tarte aux legumes', categories: ['plats-du-jour'] }
+  ];
+
+  const sections = extractMenuSections(catalog, categories, '2026-03-09');
+
+  assert.deepEqual(sections.plats, [
+    {
+      nom: 'Pates au Roquefort',
+      hasGoatOrSheepCheese: true
+    },
+    {
+      nom: 'Tarte aux legumes',
+      hasGoatOrSheepCheese: false
+    }
+  ]);
+});
+
+test('extractMenuSections detects goat or sheep specialties with case and accent variations', () => {
+  const categories = [
+    { nom: 'Plats du jour', slug: 'plats-du-jour' }
+  ];
+
+  const catalog = [
+    { nom: 'Salade FETA tomates', categories: ['plats-du-jour'] },
+    { nom: 'Tarte au CHÈVRE et miel', categories: ['plats-du-jour'] },
+    { nom: 'Pates au PECORINO romano', categories: ['plats-du-jour'] },
+    { nom: 'Assiette Ossau-Iraty', categories: ['plats-du-jour'] },
+    { nom: 'Poulet basquaise', categories: ['plats-du-jour'] }
+  ];
+
+  const sections = extractMenuSections(catalog, categories, '2026-03-09');
+
+  assert.deepEqual(sections.plats, [
+    {
+      nom: 'Salade FETA tomates',
+      hasGoatOrSheepCheese: true
+    },
+    {
+      nom: 'Tarte au CHÈVRE et miel',
+      hasGoatOrSheepCheese: true
+    },
+    {
+      nom: 'Pates au PECORINO romano',
+      hasGoatOrSheepCheese: true
+    },
+    {
+      nom: 'Assiette Ossau-Iraty',
+      hasGoatOrSheepCheese: true
+    },
+    {
+      nom: 'Poulet basquaise',
+      hasGoatOrSheepCheese: false
+    }
+  ]);
 });

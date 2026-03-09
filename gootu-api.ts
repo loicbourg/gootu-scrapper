@@ -25,8 +25,13 @@ export interface MenuDetail {
 }
 
 export interface MenuSections {
-  plats: string[];
+  plats: MenuPlat[];
   desserts: string[];
+}
+
+export interface MenuPlat {
+  nom: string;
+  hasGoatOrSheepCheese: boolean;
 }
 
 export interface GootuApiData {
@@ -109,6 +114,39 @@ function shouldPromoteSnackingToPlat(
   return extractDatePrefix(item.fin) === targetDate;
 }
 
+function normalizeForContains(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+const GOAT_OR_SHEEP_SPECIALTIES = [
+  'chevre',
+  'brebis',
+  'roquefort',
+  'feta',
+  'pecorino',
+  'ossau',
+  'iraty',
+  'manchego',
+  'brocciu',
+  'cabecou',
+  'chabichou',
+  'picodon',
+  'crottin',
+  'valencay',
+  'sainte maure',
+  'banon',
+  'pouligny',
+  'brousse'
+].map(normalizeForContains);
+
+function containsGoatOrSheepCheese(platName: string): boolean {
+  const normalized = normalizeForContains(platName);
+  return GOAT_OR_SHEEP_SPECIALTIES.some((keyword) => normalized.includes(keyword));
+}
+
 export function extractMenuSections(
   catalog: CatalogItem[],
   categories: Category[],
@@ -125,7 +163,7 @@ export function extractMenuSections(
   const platAliases = new Set(categoryAliases('plats-du-jour'));
   const dessertAliases = new Set(categoryAliases('desserts'));
 
-  const plats: string[] = [];
+  const plats: MenuPlat[] = [];
   const desserts: string[] = [];
 
   for (const item of catalog) {
@@ -134,8 +172,11 @@ export function extractMenuSections(
     const isPlatCategory = resolved.some((category) => platAliases.has(category));
     const isPromotedSnackingPlat = shouldPromoteSnackingToPlat(item, resolved, targetDate);
 
-    if ((isPlatCategory || isPromotedSnackingPlat) && !plats.includes(item.nom)) {
-      plats.push(item.nom);
+    if ((isPlatCategory || isPromotedSnackingPlat) && !plats.some((plat) => plat.nom === item.nom)) {
+      plats.push({
+        nom: item.nom,
+        hasGoatOrSheepCheese: containsGoatOrSheepCheese(item.nom)
+      });
       continue;
     }
 
@@ -166,7 +207,10 @@ export function finalizeMenuSections(
   const desserts = [...sections.desserts];
 
   if (isOpenDay && plats.length === 0 && hasPlatFilter(menuDetail)) {
-    plats.push('Plat du jour (detail non expose par l API)');
+    plats.push({
+      nom: 'Plat du jour (detail non expose par l API)',
+      hasGoatOrSheepCheese: false
+    });
   }
 
   return { plats, desserts };
@@ -185,13 +229,14 @@ function formatHumanDate(date: Date): string {
 }
 
 export function buildSlackMessage(date: Date, sections: MenuSections): string {
+  const hasGoatPlat = sections.plats.some((plat) => plat.hasGoatOrSheepCheese);
   const lines: string[] = [];
-  lines.push(`🍽️ Menu du jour GOOTU - ${formatHumanDate(date)}`);
+  lines.push(`${hasGoatPlat ? ':goat_dead:' : '🍽️'} Menu du jour GOOTU - ${formatHumanDate(date)}`);
   lines.push('');
   lines.push('Plats du jour:');
 
   for (const plat of sections.plats) {
-    lines.push(`- ${plat}`);
+    lines.push(`- ${plat.hasGoatOrSheepCheese ? ':goat_dead: ' : ''}${plat.nom}`);
   }
 
   if (sections.desserts.length > 0) {
