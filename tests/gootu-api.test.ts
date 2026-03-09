@@ -29,6 +29,57 @@ test('extractMenuSections keeps only plat du jour and desserts', () => {
   assert.deepEqual(sections.desserts, ['Cookie chocolat']);
 });
 
+test('extractMenuSections includes active snacking plat while excluding burger/wrap/sandwich', () => {
+  const categories = [
+    { nom: 'Plats du jour', slug: 'plats-du-jour' },
+    { nom: 'Desserts', slug: 'desserts' },
+    { nom: 'Snacking', slug: 'snacking' }
+  ];
+
+  const catalog = [
+    { nom: 'Effiloche de porc sauce moutarde', categories: ['plats-du-jour'] },
+    {
+      nom: 'Quiche au thon et a la tomate',
+      categories: ['snacking'],
+      en_avant: true,
+      fin: '2026-03-09 23:59'
+    },
+    {
+      nom: 'Burger l\'Ambert + frites ou salade',
+      categories: ['snacking'],
+      en_avant: true,
+      fin: '2026-03-09 23:59'
+    },
+    {
+      nom: 'Wrap au poulet + frites/ou salade',
+      categories: ['snacking'],
+      en_avant: true,
+      fin: '2026-03-09 23:59'
+    },
+    {
+      nom: 'Sandwich Italien',
+      categories: ['snacking'],
+      en_avant: true,
+      fin: '2026-03-09 23:59'
+    },
+    {
+      nom: 'Quiche stalee',
+      categories: ['snacking'],
+      en_avant: true,
+      fin: '2026-03-08 23:59'
+    },
+    { nom: 'Cookie chocolat noisettes', categories: ['desserts'] }
+  ];
+
+  const sections = extractMenuSections(catalog, categories, '2026-03-09');
+
+  assert.deepEqual(sections.plats, [
+    'Effiloche de porc sauce moutarde',
+    'Quiche au thon et a la tomate'
+  ]);
+  assert.deepEqual(sections.desserts, ['Cookie chocolat noisettes']);
+});
+
 test('shouldPostMenu is false when there is no plat du jour', () => {
   const sections = {
     plats: [],

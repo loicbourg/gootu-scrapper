@@ -8,6 +8,8 @@ export interface Category {
 export interface CatalogItem {
   nom: string;
   categories?: string[];
+  en_avant?: boolean;
+  fin?: string;
 }
 
 export interface MenuSummary {
@@ -73,7 +75,45 @@ export function formatApiDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-export function extractMenuSections(catalog: CatalogItem[], categories: Category[]): MenuSections {
+function extractDatePrefix(value?: string): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
+}
+
+function isEligibleSnackingPlatName(name: string): boolean {
+  const normalized = slugify(name);
+  return !['burger', 'wrap', 'sandwich'].some((excluded) => normalized.includes(excluded));
+}
+
+function shouldPromoteSnackingToPlat(
+  item: CatalogItem,
+  resolvedCategories: string[],
+  targetDate: string | undefined
+): boolean {
+  if (!targetDate) {
+    return false;
+  }
+
+  if (!resolvedCategories.includes('snacking')) {
+    return false;
+  }
+
+  if (!item.en_avant || !isEligibleSnackingPlatName(item.nom)) {
+    return false;
+  }
+
+  return extractDatePrefix(item.fin) === targetDate;
+}
+
+export function extractMenuSections(
+  catalog: CatalogItem[],
+  categories: Category[],
+  targetDate?: string
+): MenuSections {
   const categoryIndex = new Map<string, string>();
 
   for (const category of categories) {
@@ -91,8 +131,10 @@ export function extractMenuSections(catalog: CatalogItem[], categories: Category
   for (const item of catalog) {
     const rawCategories = item.categories ?? [];
     const resolved = rawCategories.map((name) => categoryIndex.get(slugify(name)) ?? slugify(name));
+    const isPlatCategory = resolved.some((category) => platAliases.has(category));
+    const isPromotedSnackingPlat = shouldPromoteSnackingToPlat(item, resolved, targetDate);
 
-    if (resolved.some((category) => platAliases.has(category)) && !plats.includes(item.nom)) {
+    if ((isPlatCategory || isPromotedSnackingPlat) && !plats.includes(item.nom)) {
       plats.push(item.nom);
       continue;
     }
@@ -203,7 +245,7 @@ export async function loadGootuApiData(targetDate: Date): Promise<GootuApiData> 
     : null;
 
   const sections = finalizeMenuSections(
-    extractMenuSections(catalogResponse.catalog, categories),
+    extractMenuSections(catalogResponse.catalog, categories, dateKey),
     menuDetail,
     isOpenOnTargetDate(targetDate, creneaux)
   );
