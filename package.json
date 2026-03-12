@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.ts"
+  },
   "license": "MIT",
   "dependencies": {
     "@slack/web-api": "^7.12.0",
     "dotenv": "^17.2.3",
     "node-cron": "^4.2.1",
-    "puppeteer": "^24.27.0",
     "yargs": "^18.0.0"
   },
   "devDependencies": {

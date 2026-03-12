@@ -11,5 +11,7 @@ devenv.local.yaml
 .env
 
 node_modules/
+.worktrees/
 images/
 last_post.json
+snapshots/
