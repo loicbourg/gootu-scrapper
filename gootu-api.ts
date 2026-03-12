@@ -10,6 +10,7 @@ export interface CatalogItem {
   categories?: string[];
   en_avant?: boolean;
   fin?: string;
+  tarif_ttc1?: number;
 }
 
 export interface MenuSummary {
@@ -25,13 +26,16 @@ export interface MenuDetail {
 }
 
 export interface MenuSections {
+  snacking?: MenuPlat[];
   plats: MenuPlat[];
+  suggestions: MenuPlat[];
   desserts: string[];
 }
 
 export interface MenuPlat {
   nom: string;
   hasGoatOrSheepCheese: boolean;
+  isFallback?: boolean;
 }
 
 export interface GootuApiData {
@@ -70,6 +74,14 @@ function categoryAliases(slug: string): string[] {
     return ['dessert', 'desserts'];
   }
 
+  if (slug === 'suggestions') {
+    return ['suggestion', 'suggestions'];
+  }
+
+  if (slug === 'snacking') {
+    return ['snacking'];
+  }
+
   return [slug];
 }
 
@@ -89,29 +101,22 @@ function extractDatePrefix(value?: string): string | null {
   return match ? match[1] : null;
 }
 
-function isEligibleSnackingPlatName(name: string): boolean {
-  const normalized = slugify(name);
-  return !['burger', 'wrap', 'sandwich'].some((excluded) => normalized.includes(excluded));
+function isActiveSnackingItem(item: CatalogItem, targetDate: string | undefined): boolean {
+  const endDate = extractDatePrefix(item.fin);
+  if (!endDate || !targetDate) {
+    return true;
+  }
+
+  return endDate === targetDate;
 }
 
-function shouldPromoteSnackingToPlat(
-  item: CatalogItem,
-  resolvedCategories: string[],
-  targetDate: string | undefined
-): boolean {
-  if (!targetDate) {
-    return false;
+function isActiveForTargetDate(item: CatalogItem, targetDate: string | undefined): boolean {
+  const endDate = extractDatePrefix(item.fin);
+  if (!endDate || !targetDate) {
+    return true;
   }
 
-  if (!resolvedCategories.includes('snacking')) {
-    return false;
-  }
-
-  if (!item.en_avant || !isEligibleSnackingPlatName(item.nom)) {
-    return false;
-  }
-
-  return extractDatePrefix(item.fin) === targetDate;
+  return endDate === targetDate;
 }
 
 function normalizeForContains(value: string): string {
@@ -147,6 +152,68 @@ function containsGoatOrSheepCheese(platName: string): boolean {
   return GOAT_OR_SHEEP_SPECIALTIES.some((keyword) => normalized.includes(keyword));
 }
 
+interface CandidatePlat extends MenuPlat {
+  explicitSuggestion: boolean;
+  price?: number;
+}
+
+const SUGGESTION_PRICE_DELTA = 2;
+const UNIFORM_SUGGESTION_MIN_PRICE = 13;
+
+function toMenuPlat(candidate: CandidatePlat): MenuPlat {
+  const plat: MenuPlat = {
+    nom: candidate.nom,
+    hasGoatOrSheepCheese: candidate.hasGoatOrSheepCheese
+  };
+
+  if (candidate.isFallback) {
+    plat.isFallback = true;
+  }
+
+  return plat;
+}
+
+function splitPlatsAndSuggestions(candidates: CandidatePlat[]): { plats: MenuPlat[]; suggestions: MenuPlat[] } {
+  const suggestionByPrice = new Set<string>();
+  const nonExplicit = candidates.filter((candidate) => !candidate.explicitSuggestion);
+  const nonExplicitWithPrice = nonExplicit.filter((candidate) => Number.isFinite(candidate.price));
+
+  if (nonExplicitWithPrice.length > 0) {
+    const prices = nonExplicitWithPrice.map((candidate) => candidate.price as number);
+    const roundedUniquePrices = new Set(prices.map((price) => Number(price.toFixed(2))));
+
+    if (roundedUniquePrices.size === 1) {
+      const uniformPrice = prices[0];
+      if (uniformPrice > UNIFORM_SUGGESTION_MIN_PRICE) {
+        for (const candidate of nonExplicitWithPrice) {
+          suggestionByPrice.add(candidate.nom);
+        }
+      }
+    } else {
+      const basePlatPrice = Math.min(...prices);
+      for (const candidate of nonExplicitWithPrice) {
+        if ((candidate.price as number) - basePlatPrice >= SUGGESTION_PRICE_DELTA) {
+          suggestionByPrice.add(candidate.nom);
+        }
+      }
+    }
+  }
+
+  const plats: MenuPlat[] = [];
+  const suggestions: MenuPlat[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.explicitSuggestion || suggestionByPrice.has(candidate.nom)) {
+      suggestions.push(toMenuPlat(candidate));
+      continue;
+    }
+
+    plats.push(toMenuPlat(candidate));
+  }
+
+  return { plats, suggestions };
+}
+
 export function extractMenuSections(
   catalog: CatalogItem[],
   categories: Category[],
@@ -161,21 +228,40 @@ export function extractMenuSections(
   }
 
   const platAliases = new Set(categoryAliases('plats-du-jour'));
+  const suggestionAliases = new Set(categoryAliases('suggestions'));
+  const snackingAliases = new Set(categoryAliases('snacking'));
   const dessertAliases = new Set(categoryAliases('desserts'));
 
-  const plats: MenuPlat[] = [];
+  const platsCandidates: CandidatePlat[] = [];
+  const snacking: MenuPlat[] = [];
   const desserts: string[] = [];
 
   for (const item of catalog) {
     const rawCategories = item.categories ?? [];
     const resolved = rawCategories.map((name) => categoryIndex.get(slugify(name)) ?? slugify(name));
     const isPlatCategory = resolved.some((category) => platAliases.has(category));
-    const isPromotedSnackingPlat = shouldPromoteSnackingToPlat(item, resolved, targetDate);
+    const isSuggestionCategory = resolved.some((category) => suggestionAliases.has(category));
+    const isSnackingCategory = resolved.some((category) => snackingAliases.has(category));
+    const isCandidateSavoryItem = isPlatCategory || isSuggestionCategory || isSnackingCategory;
 
-    if ((isPlatCategory || isPromotedSnackingPlat) && !plats.some((plat) => plat.nom === item.nom)) {
-      plats.push({
+    if (isCandidateSavoryItem && !isActiveForTargetDate(item, targetDate)) {
+      continue;
+    }
+
+    if (isSnackingCategory && isActiveSnackingItem(item, targetDate) && !snacking.some((plat) => plat.nom === item.nom)) {
+      snacking.push({
         nom: item.nom,
         hasGoatOrSheepCheese: containsGoatOrSheepCheese(item.nom)
+      });
+      continue;
+    }
+
+    if ((isPlatCategory || isSuggestionCategory) && !platsCandidates.some((plat) => plat.nom === item.nom)) {
+      platsCandidates.push({
+        nom: item.nom,
+        hasGoatOrSheepCheese: containsGoatOrSheepCheese(item.nom),
+        explicitSuggestion: isSuggestionCategory,
+        price: Number.isFinite(item.tarif_ttc1) ? item.tarif_ttc1 : undefined
       });
       continue;
     }
@@ -185,7 +271,8 @@ export function extractMenuSections(
     }
   }
 
-  return { plats, desserts };
+  const { plats, suggestions } = splitPlatsAndSuggestions(platsCandidates);
+  return { snacking, plats, suggestions, desserts };
 }
 
 export function isOpenOnTargetDate(targetDate: Date, creneaux: CreneauxResponse): boolean {
@@ -203,21 +290,26 @@ export function finalizeMenuSections(
   menuDetail: MenuDetail | null,
   isOpenDay: boolean
 ): MenuSections {
+  const snacking = [...(sections.snacking ?? [])];
   const plats = [...sections.plats];
+  const suggestions = [...(sections.suggestions ?? [])];
   const desserts = [...sections.desserts];
 
   if (isOpenDay && plats.length === 0 && hasPlatFilter(menuDetail)) {
     plats.push({
       nom: 'Plat du jour (detail non expose par l API)',
-      hasGoatOrSheepCheese: false
+      hasGoatOrSheepCheese: false,
+      isFallback: true
     });
   }
 
-  return { plats, desserts };
+  return { snacking, plats, suggestions, desserts };
 }
 
 export function shouldPostMenu(sections: MenuSections, isOpenDay: boolean = true): boolean {
-  return isOpenDay && sections.plats.length > 0;
+  const hasPlat = sections.plats.some((plat) => !plat.isFallback);
+  const hasSuggestion = (sections.suggestions ?? []).length > 0;
+  return isOpenDay && (hasPlat || hasSuggestion);
 }
 
 function formatHumanDate(date: Date): string {
@@ -229,14 +321,33 @@ function formatHumanDate(date: Date): string {
 }
 
 export function buildSlackMessage(date: Date, sections: MenuSections): string {
-  const hasGoatPlat = sections.plats.some((plat) => plat.hasGoatOrSheepCheese);
+  const snacking = sections.snacking ?? [];
+  const suggestions = sections.suggestions ?? [];
+  const hasGoatPlat = [...snacking, ...sections.plats, ...suggestions].some((plat) => plat.hasGoatOrSheepCheese);
   const lines: string[] = [];
   lines.push(`${hasGoatPlat ? ':goat_dead:' : '🍽️'} Menu du jour GOOTU - ${formatHumanDate(date)}`);
+
+  if (snacking.length > 0) {
+    lines.push('');
+    lines.push('Snacking:');
+    for (const item of snacking) {
+      lines.push(`- ${item.hasGoatOrSheepCheese ? ':goat_dead: ' : ''}${item.nom}`);
+    }
+  }
+
   lines.push('');
   lines.push('Plats du jour:');
 
   for (const plat of sections.plats) {
     lines.push(`- ${plat.hasGoatOrSheepCheese ? ':goat_dead: ' : ''}${plat.nom}`);
+  }
+
+  if (suggestions.length > 0) {
+    lines.push('');
+    lines.push('Suggestions:');
+    for (const suggestion of suggestions) {
+      lines.push(`- ${suggestion.hasGoatOrSheepCheese ? ':goat_dead: ' : ''}${suggestion.nom}`);
+    }
   }
 
   if (sections.desserts.length > 0) {

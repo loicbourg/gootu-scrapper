@@ -7,11 +7,12 @@ Le scraping Facebook/Playwright n'est plus utilisé.
 ## Fonctionnalités
 
 - Interroge l'API Gootu en HTTP simple
-- Filtre uniquement les catégories utiles pour Slack:
-  - `plats-du-jour`
-  - `desserts`
-- Inclut aussi les plats `snacking` du jour marqués `en_avant` (ex: quiche) sauf s'ils ressemblent a des burgers/wraps/sandwichs
-- Ignore les catégories non pertinentes (`boissons`, `sandwichs`, `salades`), donc les burgers/wraps/sandwichs restent exclus du message Slack
+- Construit 3 sections salées pour Slack:
+  - `snacking` (catégorie API `snacking`, active le jour cible)
+  - `plats du jour`
+  - `suggestions` (plats plus chers, déterminés par heuristique de prix)
+- Garde une section `desserts`
+- Ignore les catégories non pertinentes (`boissons`, `sandwichs`, `salades`)
 - Ne poste qu'une fois par jour sur Slack
 - Exécute une collecte toutes les 15 minutes de 9h à 11h45
 - Conserve des snapshots API (JSON) pour debug et tests

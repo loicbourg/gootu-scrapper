@@ -34,7 +34,7 @@ test('extractMenuSections keeps only plat du jour and desserts', () => {
   assert.deepEqual(sections.desserts, ['Cookie chocolat']);
 });
 
-test('extractMenuSections includes active snacking plat while excluding burger/wrap/sandwich', () => {
+test('extractMenuSections separates active snacking from plats du jour', () => {
   const categories = [
     { nom: 'Plats du jour', slug: 'plats-du-jour' },
     { nom: 'Desserts', slug: 'desserts' },
@@ -45,24 +45,6 @@ test('extractMenuSections includes active snacking plat while excluding burger/w
     { nom: 'Effiloche de porc sauce moutarde', categories: ['plats-du-jour'] },
     {
       nom: 'Quiche au thon et a la tomate',
-      categories: ['snacking'],
-      en_avant: true,
-      fin: '2026-03-09 23:59'
-    },
-    {
-      nom: 'Burger l\'Ambert + frites ou salade',
-      categories: ['snacking'],
-      en_avant: true,
-      fin: '2026-03-09 23:59'
-    },
-    {
-      nom: 'Wrap au poulet + frites/ou salade',
-      categories: ['snacking'],
-      en_avant: true,
-      fin: '2026-03-09 23:59'
-    },
-    {
-      nom: 'Sandwich Italien',
       categories: ['snacking'],
       en_avant: true,
       fin: '2026-03-09 23:59'
@@ -82,18 +64,38 @@ test('extractMenuSections includes active snacking plat while excluding burger/w
     {
       nom: 'Effiloche de porc sauce moutarde',
       hasGoatOrSheepCheese: false
-    },
+    }
+  ]);
+
+  assert.deepEqual(sections.snacking, [
     {
       nom: 'Quiche au thon et a la tomate',
       hasGoatOrSheepCheese: false
     }
   ]);
+
+  assert.deepEqual(sections.suggestions, []);
   assert.deepEqual(sections.desserts, ['Cookie chocolat noisettes']);
 });
 
 test('shouldPostMenu is false when there is no plat du jour', () => {
   const sections = {
     plats: [],
+    desserts: ['Cookie chocolat']
+  };
+
+  assert.equal(shouldPostMenu(sections), false);
+});
+
+test('shouldPostMenu is false when only fallback plat is present', () => {
+  const sections = {
+    plats: [
+      {
+        nom: 'Plat du jour (detail non expose par l API)',
+        hasGoatOrSheepCheese: false,
+        isFallback: true
+      }
+    ],
     desserts: ['Cookie chocolat']
   };
 
@@ -123,7 +125,8 @@ test('finalizeMenuSections adds fallback plat when menu detail has plat du jour 
   assert.deepEqual(finalSections.plats, [
     {
       nom: 'Plat du jour (detail non expose par l API)',
-      hasGoatOrSheepCheese: false
+      hasGoatOrSheepCheese: false,
+      isFallback: true
     }
   ]);
   assert.deepEqual(finalSections.desserts, ['Cookie chocolat']);
@@ -241,4 +244,114 @@ test('extractMenuSections detects goat or sheep specialties with case and accent
       hasGoatOrSheepCheese: false
     }
   ]);
+});
+
+test('extractMenuSections splits into snacking, plats du jour and suggestions', () => {
+  const categories = [
+    { nom: 'Plats du jour', slug: 'plats-du-jour' },
+    { nom: 'Snacking', slug: 'snacking' }
+  ];
+
+  const catalog = [
+    {
+      nom: 'Hot-dog Américain',
+      categories: ['snacking'],
+      tarif_ttc1: 8.5,
+      en_avant: true,
+      fin: '2026-03-09 23:59'
+    },
+    { nom: 'Emince de poulet au gingembre', categories: ['plats-du-jour'], tarif_ttc1: 10 },
+    { nom: 'Blanquette de veau', categories: ['plats-du-jour'], tarif_ttc1: 13.5 },
+    {
+      nom: 'Pates sauce saumon et fruits de mer',
+      categories: ['plats-du-jour'],
+      tarif_ttc1: 8.5,
+      en_avant: false,
+      fin: '2026-03-09 23:59'
+    }
+  ];
+
+  const sections = extractMenuSections(catalog, categories, '2026-03-09');
+
+  assert.deepEqual(sections.snacking, [
+    {
+      nom: 'Hot-dog Américain',
+      hasGoatOrSheepCheese: false
+    }
+  ]);
+
+  assert.deepEqual(sections.plats, [
+    {
+      nom: 'Emince de poulet au gingembre',
+      hasGoatOrSheepCheese: false
+    },
+    {
+      nom: 'Pates sauce saumon et fruits de mer',
+      hasGoatOrSheepCheese: false
+    }
+  ]);
+
+  assert.deepEqual(sections.suggestions, [
+    {
+      nom: 'Blanquette de veau',
+      hasGoatOrSheepCheese: false
+    }
+  ]);
+});
+
+test('extractMenuSections classifies same-price plats above 13 euros as suggestions', () => {
+  const categories = [
+    { nom: 'Plats du jour', slug: 'plats-du-jour' }
+  ];
+
+  const catalog = [
+    { nom: 'Plat A', categories: ['plats-du-jour'], tarif_ttc1: 13.5 },
+    { nom: 'Plat B', categories: ['plats-du-jour'], tarif_ttc1: 13.5 }
+  ];
+
+  const sections = extractMenuSections(catalog, categories, '2026-03-09');
+
+  assert.deepEqual(sections.snacking, []);
+  assert.deepEqual(sections.plats, []);
+  assert.deepEqual(sections.suggestions, [
+    {
+      nom: 'Plat A',
+      hasGoatOrSheepCheese: false
+    },
+    {
+      nom: 'Plat B',
+      hasGoatOrSheepCheese: false
+    }
+  ]);
+});
+
+test('buildSlackMessage renders snacking and suggestions in dedicated sections', () => {
+  const text = buildSlackMessage(new Date('2026-03-09T09:00:00Z'), {
+    snacking: [
+      {
+        nom: 'Hot-dog Américain',
+        hasGoatOrSheepCheese: false
+      }
+    ],
+    plats: [
+      {
+        nom: 'Plat du jour classique',
+        hasGoatOrSheepCheese: false
+      }
+    ],
+    suggestions: [
+      {
+        nom: 'Suggestion du chef',
+        hasGoatOrSheepCheese: false
+      }
+    ],
+    desserts: ['Cookie chocolat']
+  });
+
+  assert.match(text, /Snacking:/);
+  assert.match(text, /- Hot-dog Américain/);
+  assert.match(text, /Plats du jour:/);
+  assert.match(text, /- Plat du jour classique/);
+  assert.match(text, /Suggestions:/);
+  assert.match(text, /- Suggestion du chef/);
 });
